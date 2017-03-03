@@ -1,0 +1,28 @@
+[server]
+ip=192.168.1.136
+login=admin
+pass=passwort
+path=/volume1/music/automated-tests
+name=Small test
+ip_hh=192.168.1.177:8080
+
+[step1]
+add[]=	Alanis Morissette
+	Lorde
+	Modest Mouse
+
+del[]=	Sex Pistols
+	Sheryl Crow
+	Tori Amos
+	Zumpano
+
+[step2]
+add[]=	Alanis Morissette
+	Lorde
+	Modest Mouse
+
+del[]=	Sex Pistols
+	Sheryl Crow
+	Tori Amos
+	Zumpano
+
