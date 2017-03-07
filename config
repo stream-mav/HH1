@@ -4,7 +4,7 @@ login=admin
 pass=passwort
 path=/volume1/music/automated-tests
 name=Small test
-ip_hh=192.168.1.177:8080
+ip_hh1=192.168.1.177:8080
 
 [step1]
 add[]=	Alanis Morissette

@@ -1,5 +1,12 @@
 #!/usr/bin/python2.7
 
+################################
+#
+# read list from server, and searching 
+# difference betweet server and template
+#
+################################
+
 from pexpect import pxssh
 import urllib, json
 import getpass
@@ -9,9 +16,90 @@ name_config = 'config'
 global ip_addr_hh
 global ip_addr
 
+import sys
+import json
+import urllib2
+import time
+
+lastId = ""
+
+########################################################
+def iterload(url):
+	print("=== fetching " + url + " ===")
+	try:
+		handle = urllib2.urlopen(url)
+	except:
+		raise Exception("unable to open");
+		return
+
+	buffer = ""
+	dec = json.JSONDecoder()
+
+	while(True):
+		try:
+			line = handle.read(1)
+			if len(line)==0:
+				return
+		except:
+			print("== unable to read")
+			raise Exception("unable to read")
+			return
+
+		# print(line)
+		buffer = buffer.strip(" \n\r\t") + line.strip(" \n\r\t")
+		while(True):
+			try:
+				r = dec.raw_decode(buffer)
+			except:
+				break
+			yield r[0]
+			buffer = buffer[r[1]:].strip(" \n\r\t")
+
+################################
+# reading notifications from HH1
+#  and return searched notification
+def waitForNotification(type, data, timeout):
+	# todo replace hardcoded ip
+	url = "http://192.168.1.137:8080/BeoNotify/Notifications"
+	start = time.time()
+	end = 0
+
+
+	while(True):
+		try:
+			if (end == 1):
+				break
+
+			for o in iterload(url + lastId):
+				n = o["notification"];
+				if (n.has_key("id")):
+					lastId = "?lastId=" + str(n["id"])
+
+				# VYPIS	
+				if (n["type"] == type):				
+					print(n["timestamp"] + ": " + n["type"] + ": " + json.dumps(n["data"]))	
+
+				# ZAPIS PLAY/ STOP STATUS
+				f = open('workfile', 'a')
+
+				if(n["type"].find("PROGRESS_INFORMATION") > -1):
+					if( (json.dumps(n["data"]["state"]).find("play")) > -1):
+						f.write("1")
+					else:
+						f.write("0")
+				f.close()	
+
+				# Check time
+				if ( time.time()-start > timeout):
+					end = 1
+					break		
+
+		except:
+			lastId = ""
+			time.sleep(1)
 
 #################################################
-#init
+# initialization connection at server, IP address
 def init():
 	
 	global s
@@ -23,7 +111,7 @@ def init():
 	configParser.read(configFilePath)
 
 	ip_addr = configParser.get('server', 'ip')
-	ip_addr_hh = configParser.get('server', 'ip_hh')
+	ip_addr_hh = configParser.get('server', 'ip_hh1')
 
 	# OPEN SSH
 	try:
@@ -63,6 +151,8 @@ def create_link():
 	s.sendline("ln -ns \"/volume1/music/Kenni's music/Seagate Expansion Drive/music/collection/\"* -t .")
 	s.prompt()
 
+##############
+# delete ID from url links
 def del_id(str1):
 	# find '\' in url
 	position_last = -1
@@ -96,16 +186,81 @@ def del_ids(inx):
 	except:
 		pass		
 
-def compare_json(file1, file2):
-	with open(file1) as outfile1:
-		data1 = json.load(outfile1)
+##############
+# compare two JSON, return add or delete track index - name, artis, album
+def compare_json_names():
+	for ind_1 in range(len(data1['trackList']['track'])):
+		err = 1
+		for ind_2 in range(len(data2['trackList']['track'])):
+			if((data1['trackList']['track'][ind_1]['artist'][0]['name'] == data2['trackList']['track'][ind_2]['artist'][0]['name']) and
+				(data1['trackList']['track'][ind_1]['name'] == data2['trackList']['track'][ind_2]['name']) and
+				(data1['trackList']['track'][ind_1]['parentAlbum']['name'] == data2['trackList']['track'][ind_2]['parentAlbum']['name'])):
+				err = 0
+		if(err):
+			print('=== ADD ID: ' + str(ind_1) )
+			print('Artis: ' + data1['trackList']['track'][ind_1]['artist'][0]['name'])
+			print('Name: ' + data1['trackList']['track'][ind_1]['name'])
+			print('Album: ' + data1['trackList']['track'][ind_1]['parentAlbum']['name'])
 
-	with open(file2) as outfile2:
-		data2 = json.load(outfile2)
+	for ind_2 in range(len(data2['trackList']['track'])):
+		err = 1
+		for ind_1 in range(len(data1['trackList']['track'])):
+			if((data2['trackList']['track'][ind_2]['artist'][0]['name'] == data1['trackList']['track'][ind_1]['artist'][0]['name']) and
+				(data2['trackList']['track'][ind_2]['name'] == data1['trackList']['track'][ind_1]['name']) and
+				(data2['trackList']['track'][ind_2]['parentAlbum']['name'] == data1['trackList']['track'][ind_1]['parentAlbum']['name'])):
+				err = 0
+		if(err):
+			print('=== DEL ID: ' + str(ind_2) )
+			print('Artis: ' + data1['trackList']['track'][ind_1]['artist'][0]['name'])
+			print('Name: ' + data1['trackList']['track'][ind_1]['name'])
+			print('Album: ' + data1['trackList']['track'][ind_1]['parentAlbum']['name'])
 
-	for x in range(0, len(data,['trackList']['track'])):
-		if(data1,['trackList']['track'][x]['artistNameNormalized'] == data2,['trackList']['track'][x]['artistNameNormalized']):
-			print('zhoda data '+ x)
+
+##############
+# compare two JSON databases, first find correct index database 1 with database 2
+# after find difference betweet databases
+def compare_json():
+
+	array_ind = [None] * len(data1['trackList']['track'])
+
+	for ind_1 in range(len(data1['trackList']['track'])):
+		for ind_2 in range(len(data2['trackList']['track'])):
+			if((data1['trackList']['track'][ind_1]['artist'][0]['name'] == data2['trackList']['track'][ind_2]['artist'][0]['name']) and
+				(data1['trackList']['track'][ind_1]['name'] == data2['trackList']['track'][ind_2]['name']) and
+				(data1['trackList']['track'][ind_1]['parentAlbum']['name'] == data2['trackList']['track'][ind_2]['parentAlbum']['name'])):
+					array_ind[ind_1] = ind_2
+					break
+
+	for x in range(len(array_ind)):	
+		if(array_ind[x] == None):
+			continue
+		if( compareParsedJson(data1['trackList']['track'][x], data2['trackList']['track'][array_ind[x]]) == False):
+			print('Track id = ' + str(x))
+
+##############
+# recursive function for compare_json()
+def compareParsedJson(example_json, target_json):   
+
+	if( (type(example_json) == int) or (type(example_json) == unicode) or (type(example_json) ==bool) ):
+		if(example_json == target_json):
+			return True
+		else:
+			print('example: ' + example_json )
+			print('target: ' + target_json)
+			return False
+
+	for x in example_json:	
+		try:
+			if(compareParsedJson(example_json[x], target_json[x]) == False):
+				return False
+		except:
+			try:
+				if(compareParsedJson(example_json[0], target_json[0]) == False):
+					return False
+			except:
+				pass
+
+	return True
 
 
 ##############
@@ -133,13 +288,19 @@ def readJson():
 
 		compare_json('data1.json','data2.json')
 
+##############
+# read JSON databases
+def read_file(file1, file2):
+	global data1, data2
+
+	with open(file1) as outfile1:
+		data1 = json.load(outfile1)
+
+	with open(file2) as outfile2:
+		data2 = json.load(outfile2)
+
 #################################################
 
-init()
-#create_link()
-#add_remove('step1')
-readJson()
-
-
-
-s.logout()
+read_file('data1.json','data2.json')
+compare_json()
+compare_json_names()
